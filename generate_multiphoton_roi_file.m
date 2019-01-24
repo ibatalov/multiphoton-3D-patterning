@@ -1,12 +1,12 @@
 % size of the scan field in microscope.
-area_size_x = 1023;
-area_size_y = 1023;
+area_size_x = 1024;
+area_size_y = 1024;
 laser_power = 100;
 sampling_dist = 10; % how many points to skip in the path
 
 %% open the original roi file
 file_name = 's_261714864-527330.roi';
-fileID1 = fopen(file_name,'rt', 'n', 'unicode');
+fileID1 = fopen(file_name,'r', 'n', 'unicode');
 roi_template = textscan(fileID1, '%s', 'delimiter', '\n');
 roi_template = roi_template{1};
 
@@ -36,14 +36,47 @@ for i = 1 : length(roi_template)
 	end
 end
 
+
+%%%%%%%%%%%%%%%%%%%%
+% for windows
+%poly_template_part_2 = poly_template_part_2(1:end-1);
+%%%%%%%%%%%%%%%%%%%%
+
+
+
 %% open the image, convert to border image
 [pic_name, pic_path] = uigetfile({'*.*'; '*.bmp'; '*.png'; '*.tif'; '*.tiff'; '*.jpg'; '*.jpeg'}, 'Open the binary image');
 path_name = pic_path;
+
+% re-run starting from this line if need to readjust image processing
+% parameters
 image = imread([pic_path, pic_name]);
 image = image/max(image(:));
 image = image > 0.5;
 image = image(:,:,1);
 
+%% IMAGE PROCESSING TOOLS. USE AS NEEDED.
+% showing the image before processing
+figure; imshow(image);
+
+% imvert image
+image = image == 0;
+
+% closing holes up to the size dilate_dist*2
+dilate_dist = 10;
+disk = strel('disk', dilate_dist);
+image = imdilate(iamge, disk);
+image = imerode(image, disk);
+
+% shrinking the shapes by shrink_dist
+shrink_dist = 2
+shrink_disk = strel('disk', shrink_dist);
+image = imerode(image, shrink_disk); % change imerode to imdilate to expand the shapes
+
+% showing the image after the processing
+figure; imshow(image);
+
+%% find image border
 image_size_x = size(image, 2);
 image_size_y = size(image, 1);
 max_image_size = max(image_size_x, image_size_y);
@@ -250,20 +283,28 @@ image_to_show = zeros([area_size_y, area_size_x, 3]);
 background = imresize(image_border, max(area_size_x, area_size_y)/max_image_size);
 %background = zeros(area_size_y, area_size_x);
 shape_layer = zeros(area_size_y, area_size_x);
+image_dims = size(shape_layer);
 for i = 1 : length(smoothed_final_paths)
 	path = smoothed_final_paths{i};
 	path = round(path);
 	path = [path(:,2), path(:,1)];
 	
-	curr_shape = draw_path(path, 'fill', true);
-	dim = size(curr_shape);
-	
-	shape_image = curr_shape(:,:,2);
+    range = [1, area_size_x; 1, area_size_y]; %+ [-1, 1; -1, 1]*padding;
+	[curr_shape, converted_polygon] = draw_path(path, 'fill', false, 'range', range, 'fill_color', path_colors(i));
+    dim = size(curr_shape);
+    inner_px = get_closed_shape_inner_pixels(curr_shape(:,:,2), converted_polygon);
+    
+    if ~isempty(inner_px)
+        %inner_px = inner_px + image_dims(1)*image_dims(2); % shift linear indices  so they correspond to the second channel
+        shape_layer(inner_px) = path_colors(i);
+    end
+    
+	%shape_image = curr_shape(:,:,2);
 	%inner_indices = get_closed_shape_inner_pixels(shape_image);
 	%[inner_rows, inner_cols] = ind2sub(size(shape_image), inner_indices);
 	%new_inner_indices = sub2ind(size(shape_layer), inner_rows, inner_cols);
 	%shape_layer(new_inner_indices) = path_colors(i);
-	shape_layer(1:dim(1), 1:dim(2)) = shape_layer(1:dim(1), 1:dim(2)) | curr_shape(:,:,2);
+	%shape_layer(1:dim(1), 1:dim(2)) = shape_layer(1:dim(1), 1:dim(2)) | curr_shape(:,:,2);
 	
 	image_to_show(1:dim(1), 1:dim(2), 3) = image_to_show(1:dim(1), 1:dim(2), 3) | curr_shape(:,:,3);
 end
