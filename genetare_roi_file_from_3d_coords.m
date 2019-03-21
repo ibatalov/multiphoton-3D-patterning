@@ -5,7 +5,7 @@ laser_power = 100;
 slice_distance_um = 1.2;
 final_size_xy_px = 300;
 crop_size = 1023;
-px_per_um = 2;
+px_per_um = 1;
 final_file_number = '257521376-404738494';
 
 inputTitles = {'file number', 'total image size (px)', 'max object size (px)', 'slice spacing (um)'};
@@ -93,7 +93,7 @@ size_xy = max(model_size(1:2), [], 2);
 
 range = [center - 1.2*size_xy/2, center + 1.2*size_xy/2];
 slice_distance = slice_distance_um * (size_xy/final_size_xy_um);
-[slice_paths, path_colors] = slice_3d_model_into_polygons(triangle_coords, slice_distance, 'imagesize', image_size, 'range', range);
+[slice_paths, path_colors] = slice_3d_model_into_polygons(triangle_coords, slice_distance, 'imagesize', image_size./4, 'range', range);
 disp('model is sliced!');
 
 %% draw slices, one by one
@@ -119,22 +119,26 @@ implay(slice_movie);
 % save video
 [v_name v_path] = uiputfile({'*.avi'}, 'Save video file', [def_path 'slice_video.avi']);
 v = VideoWriter([v_path v_name]);
-v.FrameRate = 24
+v.FrameRate = 24;
 open(v);
 writeVideo(v, slice_movie);
 close(v);
 
 %% convert path coordiante range into image's pixel range [1 : imagesize]
-coord_range = [min(triangle_coords(:,1)), max(triangle_coords(:,1)); min(triangle_coords(:,2)), max(triangle_coords(:,2))];
-coord_range = coord_range + [-1, 1; -1, 1] * size_xy*(crop_size - final_size_xy_px)/final_size_xy_px/2; % expand the range
+
+%coord_range = [min(triangle_coords(:,1)), max(triangle_coords(:,1)); min(triangle_coords(:,2)), max(triangle_coords(:,2))];
+%coord_range = coord_range + [-1, 1; -1, 1] * size_xy*(crop_size - final_size_xy_px)/final_size_xy_px/2; % expand the range
+
+coord_range = [0, area_size_x; 0, area_size_y];
+
 new_slice_paths = cell(size(slice_paths));
 for slice_num = 1 : length(slice_paths)
 	paths = slice_paths{slice_num};
 	if ~isempty(paths)
 		for path_num = 1 : length(paths)
 			path = paths{path_num};
-			path_x = (path(:,1) - coord_range(1,1))/(coord_range(1,2) - coord_range(1,1))*(crop_size - 1) + 1;
-			path_y = crop_size - (path(:,2) - coord_range(2,1))/(coord_range(2,2) - coord_range(2,1))*(crop_size - 1);
+			path_x = (path(:,1) - coord_range(1,1))/(coord_range(1,2) - coord_range(1,1))*(crop_size);
+			path_y = crop_size - (path(:,2) - coord_range(2,1))/(coord_range(2,2) - coord_range(2,1))*(crop_size);
 			paths{path_num} = [path_x, path_y];
 		end
 		new_slice_paths{slice_num} = paths;

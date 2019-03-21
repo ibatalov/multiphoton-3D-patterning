@@ -19,10 +19,14 @@ for path_num = 1 : length(borders)
 	
 	lin_indices = sub2ind(size(test_image), border(:,1), border(:,2));
 	test_image(lin_indices) = 0;
-	
+
 	CC = bwconncomp(test_image, 4);
 	if CC.NumObjects < 2
-		disp(['NUMBER OF OBJECTS IS LESS THAN 2! IT IS: ', num2str(CC.NumObjects)]);
+		%disp(['NUMBER OF OBJECTS IS LESS THAN 2! IT IS: ', num2str(CC.NumObjects)]);
+		%if path_colors(path_num) == 0
+		%	figure;
+		%	imshow(test_image)
+		%end
 	else
 		obj_list = CC.PixelIdxList;
 		% remove the object representing the outside of the border
@@ -40,7 +44,15 @@ for path_num = 1 : length(borders)
 		[inner_rows, inner_cols] = ind2sub(size(test_image), inner_indices);
 		inner_subs = [inner_rows, inner_cols] + [min_row - 2, min_col - 2];
 		borders_inner_points{path_num} = inner_subs;
-		path_colors(path_num) = binary_image(inner_subs(1,1), inner_subs(1,2));
+		
+		test_point_num = 1;
+		[in, on] = inpolygon(inner_subs(test_point_num,1),inner_subs(test_point_num,2),border(:,1),border(:,2));
+		while test_point_num < size(inner_subs, 1) && (in && ~on)
+			test_point_num = test_point_num + 1;
+			[in, on] = inpolygon(inner_subs(test_point_num,1),inner_subs(test_point_num,2),border(:,1),border(:,2));
+		end
+		
+		path_colors(path_num) = binary_image(inner_subs(test_point_num,1), inner_subs(test_point_num,2));
 	end
 end
 
@@ -56,12 +68,12 @@ borders_inner_points = borders_inner_points(order_array(:,1));
 %order_array(:,1)
 
 %% draw inner areas of the 
-% for i = 1 : length(borders_inner_points)
-% 	test_image = zeros(size(binary_image));
-% 	lin_ind = sub2ind(size(binary_image), borders_inner_points{i}(:,1), borders_inner_points{i}(:,2));
-% 	test_image(lin_ind) = 1;
-% 	figure; imshow(test_image);
-% end
+%  for i = 1 : length(borders_inner_points)
+%  	test_image = zeros(size(binary_image));
+%  	lin_ind = sub2ind(size(binary_image), borders_inner_points{i}(:,1), borders_inner_points{i}(:,2));
+%  	test_image(lin_ind) = 1;
+%  	figure; imshow(test_image);
+%  end
 
 end
 

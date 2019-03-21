@@ -2,7 +2,7 @@
 area_size_x = 1024;
 area_size_y = 1024;
 laser_power = 100;
-sampling_dist = 10; % how many points to skip in the path
+sampling_dist = 2; % how many points to skip in the path
 
 %% open the original roi file
 file_name = 's_261714864-527330.roi';
@@ -36,13 +36,10 @@ for i = 1 : length(roi_template)
 	end
 end
 
-
 %%%%%%%%%%%%%%%%%%%%
 % for windows
 %poly_template_part_2 = poly_template_part_2(1:end-1);
 %%%%%%%%%%%%%%%%%%%%
-
-
 
 %% open the image, convert to border image
 [pic_name, pic_path] = uigetfile({'*.*'; '*.bmp'; '*.png'; '*.tif'; '*.tiff'; '*.jpg'; '*.jpeg'}, 'Open the binary image');
@@ -51,6 +48,7 @@ path_name = pic_path;
 % re-run starting from this line if need to readjust image processing
 % parameters
 image = imread([pic_path, pic_name]);
+%image = imresize(image, [2048, 2048]);
 image = image/max(image(:));
 image = image > 0.5;
 image = image(:,:,1);
@@ -62,14 +60,17 @@ figure; imshow(image);
 % imvert image
 image = image == 0;
 
-% closing holes up to the size dilate_dist*2
-dilate_dist = 10;
+%% closing holes up to the size dilate_dist*2
+dilate_dist = 2;
 disk = strel('disk', dilate_dist);
-image = imdilate(iamge, disk);
+image = imdilate(image, disk);
 image = imerode(image, disk);
 
+image = imerode(image, disk);
+image = imdilate(image, disk);
+
 % shrinking the shapes by shrink_dist
-shrink_dist = 2
+shrink_dist = 1;
 shrink_disk = strel('disk', shrink_dist);
 image = imerode(image, shrink_disk); % change imerode to imdilate to expand the shapes
 
@@ -80,113 +81,32 @@ figure; imshow(image);
 image_size_x = size(image, 2);
 image_size_y = size(image, 1);
 max_image_size = max(image_size_x, image_size_y);
-
-image_border = bwmorph(image, 'remove');
-endpoints = bwmorph(image_border, 'endpoints');
-while(nnz(endpoints) > 0)
-	image_border = image_border .* ~endpoints;
-	endpoints = bwmorph(image_border, 'endpoints');
-end
-image_border = bwmorph(image_border, 'skel');
-imshow(image_border);
+% 
+% image_border = bwmorph(image, 'remove');
+% endpoints = bwmorph(image_border, 'endpoints');
+% while(nnz(endpoints) > 0)
+% 	image_border = image_border .* ~endpoints;
+% 	endpoints = bwmorph(image_border, 'endpoints');
+% end
+% image_border = bwmorph(image_border, 'skel');
+% imshow(image_border);
 
 %% trace the borders with polygons
-opening_strings = []; % contains "absolute" (uncropped) coordinates
+%opening_strings = []; % contains "absolute" (uncropped) coordinates
 
-CC = bwconncomp(image_border);
-final_paths = cell(CC.NumObjects, 1); % stores border paths for each isolated shape
+traced_border_paths = trace_binary(image);
 
-for obj_num = 1 : CC.NumObjects
-	obj_indices = CC.PixelIdxList{obj_num};
-	if numel(obj_indices) > 30
-		[rows, cols] = ind2sub(size(image_border), obj_indices);
-		
-		closed_paths = {};
-		paths = cell(1,1);
-		
-		% find the first point that only has 2 neighbors to make it easier to
-		% check if the path is closed
-		first_index = 1;
-		neighbors = get_neighbors([rows(first_index), cols(first_index)], [rows, cols], size(image), 8);
-		while length(neighbors) ~= 2
-			first_index = first_index + 1;
-			neighbors = get_neighbors([rows(first_index), cols(first_index)], [rows, cols], size(image), 8);
-		end
-		paths{1} = [rows(first_index), cols(first_index); neighbors(1,:)];
-		
-		while ~isempty(paths)
-			path_count = size(paths, 1);
-			paths_to_remove = [];
-			
-			for path_num = 1: path_count
-				path = paths{path_num};
-				last_row = path(end, 1);
-				last_col = path(end, 2);
-				last_point = path(end, :);
-				
-				next_points = get_neighbors(last_point, [rows, cols], size(image), 8);
-				indices_to_remove = [];
-				for i = 1 : size(next_points, 1)
-					match_array = min(path == next_points(i,:), [], 2);
-					if ~isempty(find(match_array))
-						indices_to_remove = [indices_to_remove, i];
-					end
-				end
-				
-				if ~isempty(indices_to_remove)
-					next_points(indices_to_remove, :) = [];
-				end
-				
-				if ~isempty(next_points)
-					
-					if size(next_points, 1) > 1
-						%disp('branching');
-						% create a new braching path for every alternative
-						% route
-						for i = 2 : size(next_points, 1)
-							new_path = [path; next_points(i,:)];
-							paths{length(paths) + 1} = new_path;
-						end
-						fprintf('1. path count: %i\n', length(paths));
-					end
-					% add the first neighbor to the current path
-					path = [path; next_points(1,:)];
-					paths{path_num} = path;
-					
-					paths = remove_shorter_paths(paths, path_num, 8);
-					
-				else
-					% Remove path. If the path is closed, add it to the list
-					paths_to_remove = [paths_to_remove, path_num];
-					%disp(['removing path of length ', num2str(length(paths{path_num}))]);
-					
-					%path_test_image = zeros(size(image));
-					%path_test_image(sub2ind(size(image), path(:,1), path(:,2))) = 1;
-					%figure; imshow(path_test_image);
-					
-					adj_points = get_neighbors(last_point, [rows, cols], size(image), 8);
-					match_array = min(adj_points == path(1, :), [], 2);
-					if max(match_array(:)) > 0
-						%disp('adding a closed path');
-						closed_paths{size(closed_paths, 1) + 1} = path;
-					end
-				end
-			end
-			
-			if ~isempty(paths_to_remove)
-				paths(paths_to_remove) = [];
-				fprintf('2. path count: %i\n', length(paths));
-			end
-		end
-				
-		% choose the longest closed path
-		if ~isempty(closed_paths)
-			path_lengths = cellfun(@numel, closed_paths);
-			max_path_length = max(path_lengths(:));
-			longest_path = closed_paths{find(path_lengths == max_path_length)};
-			final_paths{obj_num} = longest_path;
-		end
-	end
+final_paths = cell(length(traced_border_paths),1);
+image_border = zeros(size(image));
+
+for i = 1 : length(traced_border_paths)
+	path = traced_border_paths{i};
+	path = path(:,1:2);
+	temp = [path(2:end,:); path(1,:)];
+	repeats = find(max(abs(temp - path), [], 2));
+	path = path(repeats,:);
+	final_paths{i} = path(:,1:2);
+	image_border(sub2ind(size(image), path(:,1), path(:,2))) = 1;
 end
 
 %% remove empty paths and paths with less than 3 points
@@ -221,7 +141,7 @@ for i = 1 : length(final_paths)
 	
 	% convert row/col to x/y. Gladly, in microscope (0,0) is in the top left corner
 	% also, adjust the scale
-	smoothed_final_path = [smoothed_path(:,2)*area_size_x/max_image_size, smoothed_path(:, 1)*area_size_y/max_image_size];
+	smoothed_final_path = [(smoothed_path(:,2) - 1)*(area_size_x-1)/(max_image_size-1), (smoothed_path(:, 1) - 1)*(area_size_y-1)/(max_image_size-1)];
 	smoothed_final_paths{i} = smoothed_final_path;
 	path_test_image(sub2ind(size(image), round(smoothed_path(:,1)), round(smoothed_path(:,2)))) = 1;
 end
@@ -290,13 +210,14 @@ for i = 1 : length(smoothed_final_paths)
 	path = [path(:,2), path(:,1)];
 	
     range = [1, area_size_x; 1, area_size_y]; %+ [-1, 1; -1, 1]*padding;
-	[curr_shape, converted_polygon] = draw_path(path, 'fill', false, 'range', range, 'fill_color', path_colors(i));
+	[curr_shape, converted_polygon] = draw_path(path+1, 'fill', false, 'range', range, 'fill_color', path_colors(i));
     dim = size(curr_shape);
     inner_px = get_closed_shape_inner_pixels(curr_shape(:,:,2), converted_polygon);
     
     if ~isempty(inner_px)
         %inner_px = inner_px + image_dims(1)*image_dims(2); % shift linear indices  so they correspond to the second channel
         shape_layer(inner_px) = path_colors(i);
+		%shape_layer(inner_px) = 1;
     end
     
 	%shape_image = curr_shape(:,:,2);
